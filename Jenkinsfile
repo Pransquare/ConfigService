@@ -48,7 +48,7 @@ pipeline {
                 powershell """
                     # Temporary credentials (use Jenkins credentials plugin in production)
                     \$username = 'Administrator'
-                    \$password = 'd8%55Ir.%Z!hNR%VgUe-07OYX0ujLy;S'
+                    \$password = 'd)I*hG!qVf2@YB95bxN=(oungEA5!M$S'
                     \$secPassword = ConvertTo-SecureString \$password -AsPlainText -Force
                     \$cred = New-Object System.Management.Automation.PSCredential(\$username, \$secPassword)
 
