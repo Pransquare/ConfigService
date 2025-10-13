@@ -12,6 +12,8 @@ pipeline {
         S3_BUCKET = "eureka-deployment-2025"
         REGION = "eu-north-1"
         EC2_HOST = "13.53.193.215"
+        EC2_USER = "Administrator"
+        EC2_PASS = "d8%55Ir.%Z!hNR%VgUe-07OYX0ujLy;S"
     }
 
     stages {
@@ -35,7 +37,7 @@ pipeline {
                     s3Upload(
                         bucket: "${S3_BUCKET}",
                         path: "${SERVICE_NAME}.jar",
-                        file: "config\\target\\config-service.jar" // correct path
+                        file: "config\\target\\config-service.jar"
                     )
                 }
             }
@@ -44,35 +46,36 @@ pipeline {
         stage('Deploy to EC2 via WinRM') {
             steps {
                 powershell """
-                    # Credentials
-                    \$username = 'Administrator'
-                    \$password = 'd8%55Ir.%Z!hNR%VgUe-07OYX0ujLy;S'
-                    \$secPassword = ConvertTo-SecureString \$password -AsPlainText -Force
-                    \$cred = New-Object System.Management.Automation.PSCredential(\$username, \$secPassword)
+                    # Convert password to secure string
+                    \$secPassword = ConvertTo-SecureString '${EC2_PASS}' -AsPlainText -Force
+                    \$cred = New-Object System.Management.Automation.PSCredential('${EC2_USER}', \$secPassword)
 
-                    # Session options
+                    # WinRM session options
                     \$sessOption = New-PSSessionOption -SkipCACheck -SkipCNCheck -SkipRevocationCheck
 
                     # Create WinRM session
                     \$session = New-PSSession -ComputerName '${EC2_HOST}' -UseSSL -Credential \$cred -Authentication Basic -SessionOption \$sessOption
 
-                    # Commands to deploy JAR
+                    # Deploy commands inside session
                     Invoke-Command -Session \$session -ScriptBlock {
-                        if (-Not (Test-Path '${DEPLOY_DIR}')) {
-                            New-Item -ItemType Directory -Path '${DEPLOY_DIR}'
+                        param(\$deployDir, \$serviceName, \$servicePort, \$s3Bucket)
+
+                        # Create deployment directory if it doesn't exist
+                        if (-Not (Test-Path \$deployDir)) {
+                            New-Item -ItemType Directory -Path \$deployDir
                         }
 
-                        # Download JAR from S3
-                        aws s3 cp s3://${S3_BUCKET}/${SERVICE_NAME}.jar ${DEPLOY_DIR}\\${SERVICE_NAME}.jar
+                        # Download the JAR from S3
+                        aws s3 cp s3://\$s3Bucket/\$serviceName.jar \$deployDir\\\$serviceName.jar
 
-                         $javaProcesses = Get-WmiObject Win32_Process | Where-Object { $_.CommandLine -match '${SERVICE_NAME}.jar' }
-    foreach ($proc in $javaProcesses) {
-        Stop-Process -Id $proc.ProcessId -Force
-    }
+                        # Stop only the Java process running this service
+                        Get-CimInstance Win32_Process -Filter "Name='java.exe'" |
+                            Where-Object { \$_.CommandLine -like "*\$serviceName.jar*" } |
+                            ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }
 
                         # Start the new JAR
-                        Start-Process -FilePath 'java' -ArgumentList "-jar ${DEPLOY_DIR}\\${SERVICE_NAME}.jar --server.port=${SERVICE_PORT}" -WindowStyle Hidden
-                    }
+                        Start-Process -FilePath 'java' -ArgumentList "-jar \$deployDir\\\$serviceName.jar --server.port=\$servicePort" -WindowStyle Hidden
+                    } -ArgumentList '${DEPLOY_DIR}', '${SERVICE_NAME}', '${SERVICE_PORT}', '${S3_BUCKET}'
 
                     # Close session
                     Remove-PSSession \$session
