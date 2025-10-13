@@ -7,7 +7,7 @@ pipeline {
 
     environment {
         DEPLOY_DIR = "C:\\Deployments"
-        SERVICE_NAME = "config-service"
+        SERVICE_NAME = "config-server"
         SERVICE_PORT = "8888"
         S3_BUCKET = "eureka-deployment-2025"
         REGION = "eu-north-1"
@@ -37,7 +37,7 @@ pipeline {
                     s3Upload(
                         bucket: "${S3_BUCKET}",
                         path: "${SERVICE_NAME}.jar",
-                        file: "config\\target\\config-service.jar"
+                        file: "config\\target\\config-server.jar"
                     )
                 }
             }
