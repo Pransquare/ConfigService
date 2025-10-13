@@ -7,9 +7,11 @@ pipeline {
     }
 
     environment {
-        DEPLOY_DIR = "C:\\Apps\\cloud-config"
+        EC2_HOST = "ec2-13-233-123-45.ap-south-1.compute.amazonaws.com"   // Replace with your EC2 public DNS
+        EC2_USER = "ec2-user"                                             // or "ubuntu"
+        DEPLOY_DIR = "/home/ec2-user/cloud-config"
         SERVICE_NAME = "cloud-config"
-        SERVICE_PORT = "8888"   // Adjust if your Cloud Config runs on a different port
+        SERVICE_PORT = "8888"
     }
 
     stages {
@@ -28,17 +30,31 @@ pipeline {
             }
         }
 
-        stage('Deploy') {
+        stage('Deploy to AWS') {
             steps {
-                echo "Deploying Cloud Config..."
-                // Kill any previous Cloud Config process
-                bat 'taskkill /F /IM java.exe || exit 0'
-                // Create deployment folder if not exists
-                bat "if not exist %DEPLOY_DIR% mkdir %DEPLOY_DIR%"
-                // Copy JAR to deploy folder
-                bat "xcopy target\\*.jar %DEPLOY_DIR% /Y /Q"
-                // Start Cloud Config server
-                bat "start cmd /c java -jar %DEPLOY_DIR%\\%SERVICE_NAME%.jar --server.port=%SERVICE_PORT%"
+                echo "Deploying Cloud Config to AWS EC2..."
+
+                // Copy JAR file to EC2 instance
+                sshPublisher(publishers: [
+                    sshPublisherDesc(
+                        configName: 'ec2-ssh-key',   // Must match your Jenkins SSH credential ID
+                        transfers: [
+                            sshTransfer(
+                                sourceFiles: 'target/*.jar',
+                                removePrefix: 'target',
+                                remoteDirectory: "${DEPLOY_DIR}",
+                                execCommand: '''
+                                    echo "Stopping any existing Cloud Config process..."
+                                    pkill -f cloud-config.jar || true
+                                    echo "Starting new Cloud Config service..."
+                                    nohup java -jar ${DEPLOY_DIR}/cloud-config-*.jar --server.port=${SERVICE_PORT} > ${DEPLOY_DIR}/app.log 2>&1 &
+                                '''
+                            )
+                        ],
+                        usePromotionTimestamp: false,
+                        verbose: true
+                    )
+                ])
             }
         }
     }
