@@ -26,8 +26,6 @@ pipeline {
         stage('Build') {
             steps {
                 echo "Building Cloud Config..."
-                
-                // Build inside Config folder where pom.xml exists
                 dir('Config') {
                     bat 'mvn clean package -DskipTests'
                 }
@@ -38,26 +36,12 @@ pipeline {
             steps {
                 echo "Deploying Cloud Config to AWS EC2..."
 
-                sshPublisher(publishers: [
-                    sshPublisherDesc(
-                        configName: 'ec2-ssh-key',   // Jenkins SSH credential ID
-                        transfers: [
-                            sshTransfer(
-                                sourceFiles: 'Config/target/*.jar',    // JAR built by Maven
-                                removePrefix: 'Config/target',
-                                remoteDirectory: "${DEPLOY_DIR}",
-                                execCommand: '''
-                                    echo "Stopping existing Cloud Config process..."
-                                    pkill -f cloud-config.jar || true
-                                    echo "Starting new Cloud Config service..."
-                                    nohup java -jar ${DEPLOY_DIR}/cloud-config-*.jar --server.port=${SERVICE_PORT} > ${DEPLOY_DIR}/app.log 2>&1 &
-                                '''
-                            )
-                        ],
-                        usePromotionTimestamp: false,
-                        verbose: true
-                    )
-                ])
+                // Use direct SSH command instead of Jenkins SSH key
+                bat """
+                echo Deploying to AWS EC2...
+                pscp -i C:\\path\\to\\your\\pemfile.pem Config\\target\\*.jar ${EC2_USER}@${EC2_HOST}:${DEPLOY_DIR}\\
+                plink -i C:\\path\\to\\your\\pemfile.pem ${EC2_USER}@${EC2_HOST} "pkill -f cloud-config.jar || true && nohup java -jar ${DEPLOY_DIR}/cloud-config-*.jar --server.port=${SERVICE_PORT} > ${DEPLOY_DIR}/app.log 2>&1 &"
+                """
             }
         }
     }
