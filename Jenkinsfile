@@ -65,8 +65,10 @@ pipeline {
                         # Download JAR from S3
                         aws s3 cp s3://${S3_BUCKET}/${SERVICE_NAME}.jar ${DEPLOY_DIR}\\${SERVICE_NAME}.jar
 
-                        # Stop existing Java process
-                        Get-Process -Name java -ErrorAction SilentlyContinue | Stop-Process -Force
+                         $javaProcesses = Get-WmiObject Win32_Process | Where-Object { $_.CommandLine -match '${SERVICE_NAME}.jar' }
+    foreach ($proc in $javaProcesses) {
+        Stop-Process -Id $proc.ProcessId -Force
+    }
 
                         # Start the new JAR
                         Start-Process -FilePath 'java' -ArgumentList "-jar ${DEPLOY_DIR}\\${SERVICE_NAME}.jar --server.port=${SERVICE_PORT}" -WindowStyle Hidden
