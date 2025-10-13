@@ -7,40 +7,75 @@ pipeline {
     }
 
     environment {
-        EC2_HOST = "ec2-13-233-123-45.ap-south-1.compute.amazonaws.com"   // Replace with your EC2 public DNS
-        EC2_USER = "ec2-user"                                             // or "ubuntu" if your AMI uses that
-        DEPLOY_DIR = "/home/ec2-user/cloud-config"
+        DEPLOY_DIR = "C:\\Deployments"
         SERVICE_NAME = "cloud-config"
         SERVICE_PORT = "8888"
+        S3_BUCKET = "cloud-config-deployment-2025"   // Your S3 bucket for Cloud Config
+        REGION = "eu-north-1"
     }
 
     stages {
 
         stage('Checkout') {
             steps {
-                echo "Checking out Cloud Config repo..."
+                echo "Cloning Cloud Config repository..."
                 git branch: 'main', url: 'https://github.com/Pransquare/ConfigService.git'
             }
         }
 
         stage('Build') {
             steps {
-                echo "Building Cloud Config..."
-                dir('Config') {
+                echo "Building Cloud Config service..."
+                dir('Config') {  // Adjust this if your pom.xml is in a subfolder
                     bat 'mvn clean package -DskipTests'
                 }
             }
         }
 
-        stage('Deploy to AWS') {
+        stage('Upload JAR to S3') {
             steps {
-                echo "Deploying Cloud Config to AWS EC2..."
+                echo "Uploading JAR to S3 bucket..."
+                withAWS(credentials: 'aws-jenkins-creds', region: "${REGION}") {
+                    s3Upload(bucket: "${S3_BUCKET}", path: "${SERVICE_NAME}.jar", file: "Config\\target\\${SERVICE_NAME}.jar")
+                }
+            }
+        }
 
-                // Use direct SSH command instead of Jenkins SSH key
-                bat """
-                echo Deploying to AWS EC2...
-                pscp -i C:\\path\\to\\your\\pemfile.pem Config\\target\\*.jar ${EC2_USER}@${EC2_HOST}:${DEPLOY_DIR}\\
-                plink -i C:\\path\\to\\your\\pemfile.pem ${EC2_USER}@${EC2_HOST} "pkill -f cloud-config.jar || true && nohup java -jar ${DEPLOY_DIR}/cloud-config-*.jar --server.port=${SERVICE_PORT} > ${DEPLOY_DIR}/app.log 2>&1 &"
+        stage('Deploy to EC2 via WinRM') {
+            steps {
+                echo "Deploying Cloud Config to EC2 via WinRM..."
+
+                powershell """
+                    # Temporary credentials (use Jenkins credentials plugin in production)
+                    \$username = 'Administrator'
+                    \$password = 'd8%55Ir.%Z!hNR%VgUe-07OYX0ujLy;S'
+                    \$secPassword = ConvertTo-SecureString \$password -AsPlainText -Force
+                    \$cred = New-Object System.Management.Automation.PSCredential(\$username, \$secPassword)
+
+                    # Skip certificate validation
+                    \$sessOption = New-PSSessionOption -SkipCACheck -SkipCNCheck -SkipRevocationCheck
+
+                    # Create secure WinRM session
+                    \$session = New-PSSession -ComputerName '13.53.193.215' -UseSSL -Credential \$cred -Authentication Basic -SessionOption \$sessOption
+
+                    # Execute deployment commands on remote EC2
+                    Invoke-Command -Session \$session -ScriptBlock {
+                        if (-Not (Test-Path '${DEPLOY_DIR}')) {
+                            New-Item -ItemType Directory -Path '${DEPLOY_DIR}'
+                        }
+
+                        Write-Host "Downloading latest Cloud Config JAR from S3..."
+                        aws s3 cp s3://${S3_BUCKET}/${SERVICE_NAME}.jar ${DEPLOY_DIR}\\${SERVICE_NAME}.jar --region ${REGION}
+
+                        Write-Host "Stopping existing Cloud Config process..."
+                        Get-Process -Name java -ErrorAction SilentlyContinue | Stop-Process -Force
+
+                        Write-Host "Starting new Cloud Config service..."
+                        Start-Process -FilePath 'java' -ArgumentList "-jar ${DEPLOY_DIR}\\${SERVICE_NAME}.jar --server.port=${SERVICE_PORT}" -WindowStyle Hidden
+                    }
+
+                    # Close the remote session
+                    Remove-PSSession \$session
                 """
             }
         }
@@ -48,10 +83,13 @@ pipeline {
 
     post {
         always {
-            echo "Cloud Config deployment finished."
+            echo "Cloud Config pipeline completed."
+        }
+        success {
+            echo "✅ Cloud Config deployed successfully!"
         }
         failure {
-            echo "Pipeline failed!"
+            echo "❌ Cloud Config deployment failed."
         }
     }
 }
