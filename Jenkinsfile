@@ -7,8 +7,8 @@ pipeline {
     }
 
     environment {
-        EC2_HOST = "ec2-13-233-123-45.ap-south-1.compute.amazonaws.com"   // 🔹 Replace with your EC2 public DNS
-        EC2_USER = "ec2-user"                                             // 🔹 or "ubuntu" if your AMI uses that
+        EC2_HOST = "ec2-13-233-123-45.ap-south-1.compute.amazonaws.com"   // Replace with your EC2 public DNS
+        EC2_USER = "ec2-user"                                             // or "ubuntu" if your AMI uses that
         DEPLOY_DIR = "/home/ec2-user/cloud-config"
         SERVICE_NAME = "cloud-config"
         SERVICE_PORT = "8888"
@@ -26,9 +26,9 @@ pipeline {
         stage('Build') {
             steps {
                 echo "Building Cloud Config..."
-
-                // 🔹 Go into the subdirectory that contains pom.xml
-                dir('cloud-config') {
+                
+                // Build inside Config folder where pom.xml exists
+                dir('Config') {
                     bat 'mvn clean package -DskipTests'
                 }
             }
@@ -38,14 +38,13 @@ pipeline {
             steps {
                 echo "Deploying Cloud Config to AWS EC2..."
 
-                // 🔹 Transfer and execute on EC2
                 sshPublisher(publishers: [
                     sshPublisherDesc(
-                        configName: 'ec2-ssh-key',   // Must match Jenkins credential ID
+                        configName: 'ec2-ssh-key',   // Jenkins SSH credential ID
                         transfers: [
                             sshTransfer(
-                                sourceFiles: 'cloud-config/target/*.jar',
-                                removePrefix: 'cloud-config/target',
+                                sourceFiles: 'Config/target/*.jar',    // JAR built by Maven
+                                removePrefix: 'Config/target',
                                 remoteDirectory: "${DEPLOY_DIR}",
                                 execCommand: '''
                                     echo "Stopping existing Cloud Config process..."
