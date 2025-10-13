@@ -8,75 +8,55 @@ pipeline {
 
     environment {
         DEPLOY_DIR = "C:\\Deployments"
-        SERVICE_NAME = "cloud-config"
-        SERVICE_PORT = "8888"
-        S3_BUCKET = "cloud-config-deployment-2025"
-        REGION = "ap-south-1"
+        SERVICE_NAME = "configserver"
         EC2_HOST = "13.53.193.215"
         EC2_USER = "Administrator"
-        EC2_PASS = "d)I*hG!qVf2@YB95bxN=(oungEA5!M$S"
+        EC2_PASSWORD = "d)I*hG!qVf2@YB95bxN=(oungEA5!M$S"
     }
 
     stages {
         stage('Checkout') {
             steps {
                 echo "Cloning Cloud Config repository..."
-                git branch: 'main', url: 'https://github.com/Pransquare/ConfigService.git'
+                git branch: 'main', url: 'https://github.com/Pransquare/ConfigService.git', credentialsId: 'Git_credentials'
             }
         }
 
         stage('Build') {
             steps {
                 echo "Building Cloud Config..."
-                bat 'mvn clean package -DskipTests'
-            }
-        }
-
-        stage('Upload JAR to S3') {
-            steps {
-                echo "Uploading JAR to S3..."
-                powershell """
-                    # Find the built JAR without hardcoding version
-                    \$jar = Get-ChildItem -Path '${env.WORKSPACE}\\Config\\target\\${SERVICE_NAME}*.jar' | Select-Object -First 1
-                    if (-Not \$jar) { throw "JAR not found!" }
-                    
-                    # Upload to S3
-                    aws s3 cp \$jar.FullName s3://${S3_BUCKET}/${SERVICE_NAME}.jar
-                """
+                dir('Config') {
+                    bat 'mvn clean package -DskipTests'
+                }
             }
         }
 
         stage('Deploy to EC2 via WinRM') {
             steps {
-                echo "Deploying Cloud Config to EC2..."
+                echo "Deploying Cloud Config to EC2 via WinRM..."
                 powershell """
-                    # Credentials
-                    \$secPassword = ConvertTo-SecureString '${EC2_PASS}' -AsPlainText -Force
-                    \$cred = New-Object System.Management.Automation.PSCredential('${EC2_USER}', \$secPassword)
+                    \$username = '${EC2_USER}'
+                    \$password = '${EC2_PASSWORD}'
+                    \$secPassword = ConvertTo-SecureString \$password -AsPlainText -Force
+                    \$cred = New-Object System.Management.Automation.PSCredential(\$username, \$secPassword)
 
-                    # Skip certificate checks
                     \$sessOption = New-PSSessionOption -SkipCACheck -SkipCNCheck -SkipRevocationCheck
-
-                    # Create WinRM session
                     \$session = New-PSSession -ComputerName '${EC2_HOST}' -UseSSL -Credential \$cred -Authentication Basic -SessionOption \$sessOption
 
-                    # Deploy commands
+                    # Copy JAR from Jenkins workspace to EC2
+                    Copy-Item -Path 'Config\\target\\${SERVICE_NAME}.jar' -Destination "\${DEPLOY_DIR}\\${SERVICE_NAME}.jar" -ToSession \$session -Force
+
+                    # Run the JAR on EC2
                     Invoke-Command -Session \$session -ScriptBlock {
-                        if (-Not (Test-Path '${DEPLOY_DIR}')) {
-                            New-Item -ItemType Directory -Path '${DEPLOY_DIR}'
-                        }
-
-                        # Download latest JAR from S3
-                        aws s3 cp s3://${S3_BUCKET}/${SERVICE_NAME}.jar ${DEPLOY_DIR}\\${SERVICE_NAME}.jar
-
-                        # Stop existing process
+                        param (\$deployDir, \$serviceName)
+                        
+                        # Stop existing Java process
                         Get-Process -Name java -ErrorAction SilentlyContinue | Stop-Process -Force
 
-                        # Start new JAR
-                        Start-Process -FilePath 'java' -ArgumentList "-jar ${DEPLOY_DIR}\\${SERVICE_NAME}.jar --server.port=${SERVICE_PORT}" -WindowStyle Hidden
-                    }
+                        # Start the new JAR
+                        Start-Process -FilePath 'java' -ArgumentList "-jar \$deployDir\\\$serviceName.jar" -WindowStyle Hidden
+                    } -ArgumentList '${DEPLOY_DIR}', '${SERVICE_NAME}'
 
-                    # Close session
                     Remove-PSSession \$session
                 """
             }
@@ -84,8 +64,8 @@ pipeline {
     }
 
     post {
-        always {
-            echo "Cloud Config pipeline finished."
+        success {
+            echo "Cloud Config deployed successfully!"
         }
         failure {
             echo "Cloud Config deployment failed!"
