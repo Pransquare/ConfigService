@@ -17,11 +17,14 @@ pipeline {
                 git branch: 'main', url: 'https://github.com/Pransquare/ConfigService.git'
             }
         }
-        stage('Build') {
-            steps {
-                bat 'mvn clean package -DskipTests'
-            }
+     stage('Build') {
+    steps {
+        dir('ConfigService') {          // <-- change to the folder that contains pom.xml
+            bat 'mvn clean package -DskipTests'
         }
+    }
+}
+
         stage('Upload JAR to S3') {
             steps {
                 withAWS(credentials: 'aws-jenkins-creds', region: "${REGION}") {
