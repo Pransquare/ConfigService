@@ -9,7 +9,7 @@ pipeline {
     environment {
         DEPLOY_DIR = "C:\\Deployments"
         SERVICE_NAME = "configserver"
-        EC2_HOST = "13.53.193.215"
+        EC2_HOST = "13.60.54.132"
         EC2_USER = "Administrator"
         EC2_PASSWORD = "d)I*hG!qVf2@YB95bxN=(oungEA5!M$S"
     }
