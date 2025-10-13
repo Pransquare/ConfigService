@@ -19,7 +19,7 @@ pipeline {
         }
      stage('Build') {
     steps {
-        dir('ConfigService') {          // <-- change to the folder that contains pom.xml
+        dir('config') {          // <-- change to the folder that contains pom.xml
             bat 'mvn clean package -DskipTests'
         }
     }
