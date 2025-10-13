@@ -59,7 +59,7 @@
 	</dependencyManagement>
  
 	<build>
-		<finalName>cloud-config</finalName>
+		<finalName>config-service</finalName>
 		<plugins>
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
