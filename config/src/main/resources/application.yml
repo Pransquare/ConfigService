@@ -1,6 +1,6 @@
 server:
   port: 8888
-  address: 13.53.193.215   # Bind to all network interfaces, including the EC2 IPv4
+  address: 0.0.0.0   # Bind to all network interfaces, including the EC2 IPv4
 
 spring:
   application:
