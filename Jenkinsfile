@@ -10,7 +10,7 @@ pipeline {
         DEPLOY_DIR = "C:\\Deployments"
         SERVICE_NAME = "config-server"
         SERVICE_PORT = "8888"
-        EC2_HOST = "13.53.193.215"
+        EC2_HOST = "13.53.132.62"
         EC2_USER = "Administrator"
         EC2_PASS = "zcriOxjGlLg0q*LJ$oaLnyB4ZII$RkpS"
     }
