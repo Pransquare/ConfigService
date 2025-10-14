@@ -13,7 +13,7 @@ pipeline {
         REGION = "eu-north-1"
         EC2_HOST = "13.53.193.215"
         EC2_USER = "Administrator"
-        EC2_PASS = "d8%55Ir.%Z!hNR%VgUe-07OYX0ujLy;S"
+        EC2_PASS = "zcriOxjGlLg0q*LJ$oaLnyB4ZII$RkpS"
     }
 
     stages {
