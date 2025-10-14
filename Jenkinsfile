@@ -1,5 +1,6 @@
 pipeline {
     agent any
+
     tools {
         jdk 'Java17'
         maven 'Maven3'
@@ -9,78 +10,70 @@ pipeline {
         DEPLOY_DIR = "C:\\Deployments"
         SERVICE_NAME = "config-server"
         SERVICE_PORT = "8888"
-        S3_BUCKET = "eureka-deployment-2025"
-        REGION = "eu-north-1"
         EC2_HOST = "13.53.193.215"
         EC2_USER = "Administrator"
         EC2_PASS = "zcriOxjGlLg0q*LJ$oaLnyB4ZII$RkpS"
     }
 
     stages {
+
         stage('Checkout') {
             steps {
+                echo "📦 Checking out code..."
                 git branch: 'main', url: 'https://github.com/Pransquare/ConfigService.git'
             }
         }
 
         stage('Build') {
             steps {
-                dir('config') { // directory containing pom.xml
+                echo "🔨 Building JAR..."
+                dir('config') { // Directory containing pom.xml
                     bat 'mvn clean package -DskipTests'
-                }
-            }
-        }
-
-        stage('Upload JAR to S3') {
-            steps {
-                withAWS(credentials: 'aws-jenkins-creds', region: "${REGION}") {
-                    s3Upload(
-                        bucket: "${S3_BUCKET}",
-                        path: "${SERVICE_NAME}.jar",
-                        file: "config\\target\\config-server.jar"
-                    )
                 }
             }
         }
 
         stage('Deploy to EC2 via WinRM') {
             steps {
+                echo "🚀 Deploying to EC2 via WinRM..."
                 powershell """
-                    # Convert password to secure string
+                    # --- Setup Credentials ---
                     \$secPassword = ConvertTo-SecureString '${EC2_PASS}' -AsPlainText -Force
                     \$cred = New-Object System.Management.Automation.PSCredential('${EC2_USER}', \$secPassword)
-
-                    # WinRM session options
                     \$sessOption = New-PSSessionOption -SkipCACheck -SkipCNCheck -SkipRevocationCheck
 
-                    # Create WinRM session
+                    # --- Create WinRM Session ---
                     \$session = New-PSSession -ComputerName '${EC2_HOST}' -UseSSL -Credential \$cred -Authentication Basic -SessionOption \$sessOption
 
-                    # Deploy commands inside session
+                    # --- Copy JAR from Jenkins to EC2 ---
+                    Copy-Item -Path "config\\target\\config-server.jar" -Destination "${DEPLOY_DIR}\\config-server.jar" -ToSession \$session -Force
+
+                    # --- Execute remote commands on EC2 ---
                     Invoke-Command -Session \$session -ScriptBlock {
-                        param(\$deployDir, \$serviceName, \$servicePort, \$s3Bucket)
+                        param(\$deployDir, \$serviceName, \$servicePort)
 
-                        # Create deployment directory if it doesn't exist
-                        if (-Not (Test-Path \$deployDir)) {
-                            New-Item -ItemType Directory -Path \$deployDir
-                        }
-
-                        # Download the JAR from S3
-                        aws s3 cp s3://\$s3Bucket/\$serviceName.jar \$deployDir\\\$serviceName.jar
-
-                        # Stop only the Java process running this service
+                        Write-Host "Stopping any existing Java process for \$serviceName..."
                         Get-CimInstance Win32_Process -Filter "Name='java.exe'" |
                             Where-Object { \$_.CommandLine -like "*\$serviceName.jar*" } |
                             ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }
 
-                        # Start the new JAR
+                        Write-Host "Starting new service..."
                         Start-Process -FilePath 'java' -ArgumentList "-jar \$deployDir\\\$serviceName.jar --server.port=\$servicePort" -WindowStyle Hidden
-                    } -ArgumentList '${DEPLOY_DIR}', '${SERVICE_NAME}', '${SERVICE_PORT}', '${S3_BUCKET}'
+                    } -ArgumentList '${DEPLOY_DIR}', '${SERVICE_NAME}', '${SERVICE_PORT}'
 
-                    # Close session
+                    # --- Close session ---
                     Remove-PSSession \$session
                 """
             }
+        }
+    }
+
+    post {
+        success {
+            echo "✅ Cloud Config deployed successfully!"
+        }
+        failure {
+            echo "❌ Cloud Config deployment failed!"
         }
     }
 }
