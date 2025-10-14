@@ -19,14 +19,28 @@ pipeline {
 
         stage('Checkout') {
             steps {
-                echo "Checking out code..."
+                echo "📦 Checking out code..."
                 git branch: 'main', url: 'https://github.com/Pransquare/ConfigService.git'
+            }
+        }
+
+        stage('Clean old JAR if locked') {
+            steps {
+                echo "🧹 Cleaning up any locked JAR..."
+                bat """
+                    if exist config\\target\\config-server.jar (
+                        echo Killing any process using config-server.jar...
+                        for /f "tokens=2" %%a in ('handle.exe config-server.jar ^| findstr "pid:"') do taskkill /PID %%a /F
+                        echo Removing old jar...
+                        del /F /Q config\\target\\config-server.jar
+                    )
+                """
             }
         }
 
         stage('Build') {
             steps {
-                echo "Building JAR..."
+                echo "🏗️ Building JAR..."
                 dir('config') {
                     bat 'mvn clean package -DskipTests'
                 }
@@ -35,7 +49,7 @@ pipeline {
 
         stage('Deploy to EC2 via WinRM HTTPS') {
             steps {
-                echo "Deploying to EC2 via WinRM (HTTPS)..."
+                echo "🚀 Deploying to EC2 (${EC2_HOST}) via WinRM (HTTPS)..."
 
                 powershell """
                     try {
@@ -44,15 +58,19 @@ pipeline {
                         \$cred = New-Object System.Management.Automation.PSCredential('${EC2_USER}', \$secPassword)
                         \$sessionOption = New-PSSessionOption -SkipCACheck -SkipCNCheck -SkipRevocationCheck
 
-                        # --- Create WinRM HTTPS Session ---
-                        Write-Host "Connecting to EC2 over HTTPS..."
+                        # --- Verify EC2 connection ---
+                        Write-Host "Testing WinRM connection to ${EC2_HOST}..."
+                        Test-WSMan -ComputerName '${EC2_HOST}' -Port 5986 -UseSSL | Out-Null
+
+                        # --- Create session ---
+                        Write-Host "Connecting securely to EC2..."
                         \$session = New-PSSession -ComputerName '${EC2_HOST}' -Credential \$cred -Authentication Basic -UseSSL -Port 5986 -SessionOption \$sessionOption
 
                         if (-not \$session) {
-                            throw "Failed to create PSSession to ${EC2_HOST}"
+                            throw "Failed to create WinRM session to ${EC2_HOST}"
                         }
 
-                        # --- Create Deploy Directory ---
+                        # --- Ensure deployment directory exists ---
                         Invoke-Command -Session \$session -ScriptBlock {
                             param(\$deployDir)
                             if (-not (Test-Path \$deployDir)) {
@@ -60,16 +78,16 @@ pipeline {
                             }
                         } -ArgumentList '${DEPLOY_DIR}'
 
-                        # --- Copy JAR to EC2 ---
-                        Write-Host "Copying JAR file to EC2..."
+                        # --- Copy the JAR file ---
+                        Write-Host "Copying new JAR to EC2..."
                         Copy-Item -Path 'config\\target\\config-server.jar' -Destination '${DEPLOY_DIR}\\config-server.jar' -ToSession \$session -Force
 
-                        # --- Restart the Spring Boot service ---
-                        Write-Host "Restarting Java service..."
+                        # --- Restart the Java process on EC2 ---
+                        Write-Host "Restarting Java service on EC2..."
                         Invoke-Command -Session \$session -ScriptBlock {
                             param(\$deployDir, \$serviceName, \$servicePort)
 
-                            Write-Host "Stopping existing process..."
+                            Write-Host "Stopping old Java process..."
                             Get-CimInstance Win32_Process -Filter "Name='java.exe'" |
                                 Where-Object { \$_.CommandLine -like "*\$serviceName.jar*" } |
                                 ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }
@@ -94,7 +112,7 @@ pipeline {
 
     post {
         success {
-            echo "✅ Cloud Config deployed successfully on EC2 (HTTPS)!"
+            echo "✅ Cloud Config deployed successfully to EC2 via HTTPS!"
         }
         failure {
             echo "❌ Cloud Config deployment failed!"
