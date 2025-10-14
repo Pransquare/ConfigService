@@ -32,41 +32,38 @@ pipeline {
             }
         }
 
-        stage('Deploy to EC2 via WinRM') {
+stage('Deploy to EC2 via WinRM') {
     steps {
-        echo "Deploying to EC2 via WinRM (HTTP) as specific user..."
+        echo "Deploying to EC2 via WinRM (HTTP) using credentials..."
         powershell """
             # --- Credentials ---
             \$secPassword = ConvertTo-SecureString '${EC2_PASS}' -AsPlainText -Force
             \$cred = New-Object System.Management.Automation.PSCredential('${EC2_USER}', \$secPassword)
 
-            # --- Entire script as a string ---
-            \$psCommand = @'
-            # Add EC2 host to TrustedHosts
-            Set-Item WSMan:\\localhost\\Client\\TrustedHosts -Value "${EC2_HOST}" -Force
+            # --- Add EC2 host to TrustedHosts (if needed) ---
+            Set-Item WSMan:\\localhost\\Client\\TrustedHosts -Value '${EC2_HOST}' -Force
 
-            # Create session
-            \$session = New-PSSession -ComputerName "${EC2_HOST}" -Credential \$cred -Authentication Basic
+            # --- Create a remote session ---
+            \$session = New-PSSession -ComputerName '${EC2_HOST}' -Credential \$cred -Authentication Basic
 
-            # Copy JAR
-            Copy-Item -Path "config\\target\\config-server.jar" -Destination "${DEPLOY_DIR}\\config-server.jar" -ToSession \$session -Force
+            # --- Copy the JAR to EC2 ---
+            Copy-Item -Path 'config\\target\\config-server.jar' -Destination '${DEPLOY_DIR}\\config-server.jar' -ToSession \$session -Force
 
-            # Restart application
+            # --- Restart the application remotely ---
             Invoke-Command -Session \$session -ScriptBlock {
                 param(\$deployDir, \$serviceName, \$servicePort)
+
+                # Stop existing Java process
                 Get-CimInstance Win32_Process -Filter "Name='java.exe'" |
                     Where-Object { \$_.CommandLine -like "*\$serviceName.jar*" } |
                     ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }
 
+                # Start new Java process
                 Start-Process -FilePath 'java' -ArgumentList "-jar \$deployDir\\\$serviceName.jar --server.port=\$servicePort" -WindowStyle Hidden
-            } -ArgumentList "${DEPLOY_DIR}", "${SERVICE_NAME}", "${SERVICE_PORT}"
+            } -ArgumentList '${DEPLOY_DIR}', '${SERVICE_NAME}', '${SERVICE_PORT}'
 
-            # Cleanup
+            # --- Cleanup ---
             Remove-PSSession \$session
-'@
-
-            # Run as EC2 user
-            Start-Process powershell -Credential \$cred -ArgumentList "-NoProfile -Command `"\$psCommand`""
         """
     }
 }
