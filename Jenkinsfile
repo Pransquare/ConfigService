@@ -7,75 +7,102 @@ pipeline {
     }
 
     environment {
-        DEPLOY_DIR = "C:\\Deployments"
+        DEPLOY_DIR   = "C:\\Deployments"
         SERVICE_NAME = "config-server"
         SERVICE_PORT = "8888"
-        EC2_HOST = "13.53.132.62"
-        EC2_USER = "Administrator"
-        EC2_PASS = "zcriOxjGlLg0q*LJ$oaLnyB4ZII$RkpS"
+        EC2_HOST     = "13.53.132.62"
+        EC2_USER     = "Administrator"
+        EC2_PASS     = "zcriOxjGlLg0q*LJ$oaLnyB4ZII$RkpS"
     }
 
     stages {
         stage('Checkout') {
             steps {
-                echo "Checking out code..."
+                echo "📦 Checking out code..."
                 git branch: 'main', url: 'https://github.com/Pransquare/ConfigService.git'
             }
         }
 
         stage('Build') {
             steps {
-                echo "Building JAR..."
+                echo "🏗️ Building Cloud Config JAR..."
                 dir('config') {
                     bat 'mvn clean package -DskipTests'
                 }
             }
         }
 
-stage('Deploy to EC2 via WinRM') {
-    steps {
-        echo "Deploying to EC2 via WinRM (HTTP) using credentials..."
-        powershell """
-            # --- Credentials ---
-            \$secPassword = ConvertTo-SecureString '${EC2_PASS}' -AsPlainText -Force
-            \$cred = New-Object System.Management.Automation.PSCredential('${EC2_USER}', \$secPassword)
+        stage('Deploy to EC2 via WinRM (HTTPS)') {
+            steps {
+                echo "🚀 Deploying Cloud Config to EC2 (${EC2_HOST}) via WinRM HTTPS..."
 
-            # --- Add EC2 host to TrustedHosts (if needed) ---
-            Set-Item WSMan:\\localhost\\Client\\TrustedHosts -Value '${EC2_HOST}' -Force
+                powershell """
+                    try {
+                        # --- Credentials ---
+                        \$secPassword = ConvertTo-SecureString '${EC2_PASS}' -AsPlainText -Force
+                        \$cred = New-Object System.Management.Automation.PSCredential('${EC2_USER}', \$secPassword)
 
-            # --- Create a remote session ---
-            \$session = New-PSSession -ComputerName '${EC2_HOST}' -Credential \$cred -Authentication Basic
+                        # --- Skip SSL certificate checks (since we use self-signed cert) ---
+                        \$sessionOption = New-PSSessionOption -SkipCACheck -SkipCNCheck -SkipRevocationCheck
 
-            # --- Copy the JAR to EC2 ---
-            Copy-Item -Path 'config\\target\\config-server.jar' -Destination '${DEPLOY_DIR}\\config-server.jar' -ToSession \$session -Force
+                        # --- Create secure WinRM session ---
+                        Write-Host "Connecting to EC2 via HTTPS..."
+                        \$session = New-PSSession -ComputerName '${EC2_HOST}' -Credential \$cred -UseSSL -Authentication Basic -Port 5986 -SessionOption \$sessionOption
 
-            # --- Restart the application remotely ---
-            Invoke-Command -Session \$session -ScriptBlock {
-                param(\$deployDir, \$serviceName, \$servicePort)
+                        if (-not \$session) {
+                            throw "Failed to establish WinRM HTTPS session to ${EC2_HOST}"
+                        }
 
-                # Stop existing Java process
-                Get-CimInstance Win32_Process -Filter "Name='java.exe'" |
-                    Where-Object { \$_.CommandLine -like "*\$serviceName.jar*" } |
-                    ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }
+                        # --- Ensure deployment directory exists on EC2 ---
+                        Invoke-Command -Session \$session -ScriptBlock {
+                            param(\$deployDir)
+                            if (-not (Test-Path \$deployDir)) {
+                                New-Item -ItemType Directory -Force -Path \$deployDir | Out-Null
+                            }
+                        } -ArgumentList '${DEPLOY_DIR}'
 
-                # Start new Java process
-                Start-Process -FilePath 'java' -ArgumentList "-jar \$deployDir\\\$serviceName.jar --server.port=\$servicePort" -WindowStyle Hidden
-            } -ArgumentList '${DEPLOY_DIR}', '${SERVICE_NAME}', '${SERVICE_PORT}'
+                        # --- Copy new JAR file to EC2 ---
+                        Write-Host "Copying JAR to EC2..."
+                        Copy-Item -Path 'config\\target\\config-server.jar' -Destination '${DEPLOY_DIR}\\config-server.jar' -ToSession \$session -Force
 
-            # --- Cleanup ---
-            Remove-PSSession \$session
-        """
-    }
-}
+                        # --- Stop any existing Java process running the same JAR ---
+                        Write-Host "Stopping existing Java process..."
+                        Invoke-Command -Session \$session -ScriptBlock {
+                            Get-CimInstance Win32_Process -Filter "Name='java.exe'" |
+                                Where-Object { \$_.CommandLine -like "*config-server.jar*" } |
+                                ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }
+                        }
 
+                        # --- Start the new JAR on EC2 ---
+                        Write-Host "Starting new config-server on port ${SERVICE_PORT}..."
+                        Invoke-Command -Session \$session -ScriptBlock {
+                            param(\$deployDir, \$serviceName, \$servicePort)
+                            Start-Process "java" "-jar \$deployDir\\\$serviceName.jar --server.port=\$servicePort" -WindowStyle Hidden
+                        } -ArgumentList '${DEPLOY_DIR}', '${SERVICE_NAME}', '${SERVICE_PORT}'
+
+                        Write-Host "✅ Cloud Config successfully deployed to EC2!"
+                    }
+                    catch {
+                        Write-Error "❌ Deployment failed: \$($_.Exception.Message)"
+                        exit 1
+                    }
+                    finally {
+                        if (\$session) {
+                            Write-Host "Closing remote session..."
+                            Remove-PSSession \$session
+                        }
+                    }
+                """
+            }
+        }
     }
 
     post {
         success {
-            echo "Cloud Config deployed successfully!"
+            echo "✅ Cloud Config deployed successfully on EC2 (HTTPS)!"
         }
         failure {
-            echo "Cloud Config deployment failed!"
+            echo "❌ Cloud Config deployment failed!"
         }
     }
 }
