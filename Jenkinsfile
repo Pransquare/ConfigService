@@ -23,14 +23,20 @@ pipeline {
             }
         }
 
-        stage('Build') {
-            steps {
-                echo "🏗️ Building Cloud Config JAR..."
-                dir('config') {
-                    bat 'mvn clean package -DskipTests'
-                }
-            }
+       stage('Build') {
+    steps {
+        echo "🏗️ Building Cloud Config JAR..."
+        // Stop any running java process first
+        bat '''
+        echo Stopping existing Java processes...
+        taskkill /F /IM java.exe || echo No running Java process found.
+        '''
+        dir('config') {
+            bat 'mvn clean package -DskipTests'
         }
+    }
+}
+
 
         stage('Deploy to EC2 via WinRM (HTTPS)') {
             steps {
