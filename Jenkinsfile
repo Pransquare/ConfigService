@@ -18,14 +18,14 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                echo "📦 Checking out code..."
+                echo "Checking out code..."
                 git branch: 'main', url: 'https://github.com/Pransquare/ConfigService.git'
             }
         }
 
        stage('Build') {
     steps {
-        echo "🏗️ Building Cloud Config JAR..."
+        echo "Building Cloud Config JAR..."
         // Stop any running java process first
         bat '''
         echo Stopping existing Java processes...
@@ -40,7 +40,7 @@ pipeline {
 
         stage('Deploy to EC2 via WinRM (HTTPS)') {
             steps {
-                echo "🚀 Deploying Cloud Config to EC2 (${EC2_HOST}) via WinRM HTTPS..."
+                echo "Deploying Cloud Config to EC2 (${EC2_HOST}) via WinRM HTTPS..."
 
                 powershell """
                     try {
@@ -86,10 +86,10 @@ pipeline {
                             Start-Process "java" "-jar \$deployDir\\\$serviceName.jar --server.port=\$servicePort" -WindowStyle Hidden
                         } -ArgumentList '${DEPLOY_DIR}', '${SERVICE_NAME}', '${SERVICE_PORT}'
 
-                        Write-Host "✅ Cloud Config successfully deployed to EC2!"
+                        Write-Host "Cloud Config successfully deployed to EC2!"
                     }
                     catch {
-                        Write-Error "❌ Deployment failed: \$($_.Exception.Message)"
+                        Write-Error "Deployment failed: \$($_.Exception.Message)"
                         exit 1
                     }
                     finally {
@@ -105,10 +105,10 @@ pipeline {
 
     post {
         success {
-            echo "✅ Cloud Config deployed successfully on EC2 (HTTPS)!"
+            echo "Cloud Config deployed successfully on EC2 (HTTPS)!"
         }
         failure {
-            echo "❌ Cloud Config deployment failed!"
+            echo "Cloud Config deployment failed!"
         }
     }
 }
