@@ -3,11 +3,11 @@ pipeline {
 
     environment {
         DEPLOY_DIR = "/home/ec2-user"
-        EC2_HOST = "13.60.24.160"                     
-        SERVICE_NAME = "config-server"               
-        SERVER_PORT = "8888"                          
+        EC2_HOST = "13.60.24.160"
+        SERVICE_NAME = "config-server"
+        SERVER_PORT = "8888"
         LOG_FILE = "config-server.log"
-        SSH_CREDENTIALS_ID = "ec2-linux-key"          
+        SSH_CREDENTIALS_ID = "ec2-linux-key"
     }
 
     tools {
@@ -27,7 +27,10 @@ pipeline {
         stage('Build') {
             steps {
                 echo "Building Config Server JAR..."
-                bat 'mvn clean package -DskipTests'
+                // Navigate to 'config' folder where pom.xml is located
+                dir('config') {
+                    bat 'mvn clean package -DskipTests'
+                }
             }
         }
 
@@ -44,7 +47,7 @@ pipeline {
                     ]
 
                     echo "Copying JAR to EC2..."
-                    sshPut remote: remote, from: "target/${SERVICE_NAME}.jar", into: "${DEPLOY_DIR}/"
+                    sshPut remote: remote, from: "config/target/${SERVICE_NAME}.jar", into: "${DEPLOY_DIR}/"
 
                     echo "Stopping old Config Server instance..."
                     sshCommand remote: remote, command: "pkill -f ${SERVICE_NAME}.jar || true"
@@ -67,10 +70,10 @@ pipeline {
 
     post {
         failure {
-            echo "Config Server deployment failed. Check Jenkins console logs for details."
+            echo "❌ Config Server deployment failed. Check Jenkins console logs for details."
         }
         success {
-            echo "Config Server deployed successfully! Accessible at: http://${EC2_HOST}:${SERVER_PORT}/"
+            echo "✅ Config Server deployed successfully! Accessible at: http://${EC2_HOST}:${SERVER_PORT}/"
         }
     }
 }
