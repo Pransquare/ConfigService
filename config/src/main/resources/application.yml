@@ -1,6 +1,6 @@
 server:
   port: 8888
-  address: 0.0.0.0   # Bind to all network interfaces, including the EC2 IPv4
+
 
 spring:
   application:
@@ -11,3 +11,10 @@ spring:
         git:
           uri: https://github.com/Pransquare/CloudConfig.git
           clone-on-start: true
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    prefer-ip-address: true
