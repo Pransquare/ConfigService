@@ -36,7 +36,7 @@ pipeline {
                 ssh -i "${PEM_PATH}" -o StrictHostKeyChecking=no ec2-user@${EC2_HOST} "mkdir -p ${DEPLOY_DIR}"
  
                 echo ===== Copying JAR to EC2 =====
-                scp -i "${PEM_PATH}" -o StrictHostKeyChecking=no target\\${SERVICE_NAME}.jar ec2-user@${EC2_HOST}:${DEPLOY_DIR}/
+                scp -i "C:\Users\KRISHNA\Downloads\ec2-linux-key.pem" -o StrictHostKeyChecking=no config\target\config-server.jar ec2-user@13.48.57.142:/home/ec2-user/config-server/
  
                 echo ===== Stopping old Config-server instance if running =====
                 ssh -i "${PEM_PATH}" -o StrictHostKeyChecking=no ec2-user@${EC2_HOST} "pkill -f ${SERVICE_NAME}.jar || true"
