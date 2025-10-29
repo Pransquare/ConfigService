@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         DEPLOY_DIR = "/home/ec2-user/config-server"
-        EC2_HOST = "ec2-16-16-15-233.eu-north-1.compute.amazonaws.com"
+        EC2_HOST = "ec2-51-21-52-140.eu-north-1.compute.amazonaws.com"
         SERVICE_NAME = "config-server"
         PEM_PATH = "C:\\Users\\sdudd\\Downloads\\clousservice.pem"
     }
